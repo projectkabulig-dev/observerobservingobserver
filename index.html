@@ -307,7 +307,7 @@ dialog textarea{font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;min-height:
       </div>
     </div>
     <div class="actions">
-      <button class="btn primary" id="btnAnalyze">Analyze with Gemini</button>
+      <button class="btn primary" id="btnAnalyze">Analyze</button>
     </div>
     <div class="status" id="anStatus" role="status" aria-live="polite"></div>
   </section>
@@ -316,7 +316,7 @@ dialog textarea{font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;min-height:
   <section class="panel" id="p4" hidden>
     <h2 class="title">Check the analysis</h2>
     <p class="lede">The AI classified each question and approach from the quotes shown. Change anything you disagree with, or remove items that are wrong. The final judgment is yours.</p>
-    <div id="anWrap"><div class="card"><span class="stat">No analysis yet. Run "Analyze with Gemini" in the Review step.</span></div></div>
+    <div id="anWrap"><div class="card"><span class="stat">No analysis yet. Run "Analyze" in the Review step.</span></div></div>
     <div class="actions" id="genRow" hidden>
       <button class="btn primary" id="btnReport">Generate the report</button>
     </div>
@@ -364,7 +364,7 @@ dialog textarea{font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;min-height:
     <label style="font-size:13px"><input type="checkbox" id="showKey"> Show keys</label>
     <div class="note info">Keys are stored only in this browser and are never in the page code. Because this page is public on GitHub, do not use it on a shared computer. For the Claude key, set a low monthly spend limit in the Anthropic Console. For the Gemini key, restrict it to your github.io address.</div>
     <div class="grid">
-      <label class="f">Gemini model<input id="setModel" list="modelList" placeholder="gemini-2.5-flash"></label>
+      <label class="f">Gemini model<input id="setModel" list="modelList" placeholder="gemini-3.8-flash"></label>
     </div>
     <datalist id="modelList"></datalist>
     <div class="actions" style="margin:0"><button class="btn small" id="btnModels">Load Gemini models</button><button class="btn small" id="btnTestKey">Test Gemini key</button></div>
@@ -774,7 +774,7 @@ function updateTrStats(){
 
 /* ============ Gemini ============ */
 const API = "https://generativelanguage.googleapis.com/v1beta";
-const cfg = () => ({ key: LS.get("ksup.key",""), model: LS.get("ksup.model","gemini-2.5-flash") });
+const cfg = () => { const m = LS.get("ksup.model",""); return { key: LS.get("ksup.key",""), model: (!m || m === "gemini-2.5-flash") ? "gemini-3.8-flash" : m }; };
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 async function gem({system, parts, json=false, temp=0.2}){
   const {key, model} = cfg();
@@ -849,6 +849,8 @@ async function claude({system, text, maxTokens=16000}){
   }
   throw lastErr;
 }
+const modelLabel = () => provider() === "gemini" ? "Gemini (" + cfg().model + ")" : "Claude (" + LS.get("ksup.cmodel","claude-sonnet-5-5") + ")";
+function updProvLabels(){ $("btnAnalyze").textContent = "Analyze with " + (provider() === "gemini" ? "Gemini" : "Claude"); }
 async function llm({system, text, json=false, maxTokens=16000}){
   if(provider() === "claude") return claude({system, text, maxTokens});
   return gem({system, parts:[{text}], json, temp:0.2});
@@ -956,7 +958,7 @@ $("btnAnalyze").onclick = async () => {
   const mode = getMode(), st = $("anStatus"), btn = $("btnAnalyze");
   if(mode !== "notes" && !$("transcript2").value.trim()){ st.innerHTML = '<div class="err">The transcript is empty. Record, upload audio, or paste a transcript first.</div>'; return; }
   if(mode === "notes" && !$("notes2").value.trim()){ st.innerHTML = '<div class="err">Your notes are empty.</div>'; return; }
-  btn.disabled = true; st.innerHTML = '<span class="spinner"></span>Analyzing. This can take 30 to 90 seconds.';
+  btn.disabled = true; st.innerHTML = '<span class="spinner"></span>Analyzing with ' + esc(modelLabel()) + '. This can take 30 to 90 seconds.';
   try{
     const sys = LS.get("ksup.promptA","") || DEFAULT_ANALYSIS;
     const out = await llm({ system:sys, text:evidencePackage(), json:true, maxTokens:16000 });
@@ -1027,7 +1029,7 @@ $("anWrap").addEventListener("click", e => {
 $("btnReport").onclick = async () => {
   const a = S.analysis; if(!a) return;
   const st = $("rpStatus"), btn = $("btnReport"); btn.disabled = true;
-  st.innerHTML = '<span class="spinner"></span>Writing the report sections.';
+  st.innerHTML = '<span class="spinner"></span>Writing the report with ' + esc(modelLabel()) + '.';
   try{
     const tx = $("transcript2").value;
     const lang = $("repLang").value;
@@ -1148,12 +1150,12 @@ $("btnSettings").onclick = openSettings;
 $("setCancel").onclick = () => dlg.close();
 $("showKey").onchange = e => { const t = e.target.checked ? "text" : "password"; $("setKey").type = t; $("setCKey").type = t; };
 $("setSave").onclick = () => {
-  LS.set("ksup.key", $("setKey").value.trim()); LS.set("ksup.model", $("setModel").value.trim() || "gemini-2.5-flash");
+  LS.set("ksup.key", $("setKey").value.trim()); LS.set("ksup.model", $("setModel").value.trim() || "gemini-3.8-flash");
   LS.set("ksup.provider", $("setProvider").value); LS.set("ksup.ckey", $("setCKey").value.trim()); LS.set("ksup.cmodel", $("setCModel").value.trim() || "claude-sonnet-5-5");
   const pa = $("setPA").value.trim(), pr = $("setPR").value.trim();
   if(!pa || pa === DEFAULT_ANALYSIS.trim()) LS.del("ksup.promptA"); else LS.set("ksup.promptA", pa);
   if(!pr || pr === DEFAULT_REPORT.trim()) LS.del("ksup.promptR"); else LS.set("ksup.promptR", pr);
-  saveDraft(); applyTxMode(); dlg.close();
+  saveDraft(); applyTxMode(); updProvLabels(); dlg.close();
 };
 $("resetPA").onclick = () => { $("setPA").value = DEFAULT_ANALYSIS; };
 $("resetPR").onclick = () => { $("setPR").value = DEFAULT_REPORT; };
@@ -1170,7 +1172,7 @@ $("btnModels").onclick = async () => {
   }catch(e){ $("setStatus").textContent = "Could not load models: " + e.message; }
 };
 $("btnTestKey").onclick = async () => {
-  LS.set("ksup.key", $("setKey").value.trim()); LS.set("ksup.model", $("setModel").value.trim() || "gemini-2.5-flash");
+  LS.set("ksup.key", $("setKey").value.trim()); LS.set("ksup.model", $("setModel").value.trim() || "gemini-3.8-flash");
   $("setStatus").innerHTML = '<span class="spinner"></span>Testing.';
   try{ const out = await gem({parts:[{text:"Reply with the single word: ready"}], temp:0}); $("setStatus").textContent = "Works. Gemini said: " + out.text.trim().slice(0,40); }
   catch(e){ $("setStatus").textContent = friendly(e); }
@@ -1191,7 +1193,7 @@ $("btnNew").onclick = () => {
 };
 
 /* ============ init ============ */
-loadDraft(); applyTxMode(); updLangBtn(); go(1);
+loadDraft(); applyTxMode(); updLangBtn(); updProvLabels(); go(1);
 if(!(window.SpeechRecognition || window.webkitSpeechRecognition)) $("modeNote").textContent += " Instant browser text is not available in this browser, so use Auto mode.";
 </script>
 </body>
