@@ -236,7 +236,7 @@ dialog textarea{font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;min-height:
       </div>
       <div class="radios" role="radiogroup" aria-label="How speech becomes text" style="margin-bottom:10px">
         <label><input type="radio" name="txmode" value="auto"><div><b>Auto: Tagalog and English together</b><span>Needs a Gemini key. Listens in short clips, so Taglish is fine. Text appears 10 to 30 seconds after speech. If Gemini stops, it switches to instant browser text by itself.</span></div></label>
-        <label><input type="radio" name="txmode" value="browser" checked><div><b>Instant browser text (no API key)</b><span>Same method as the KABULIG FGD recorder. Hears one language at a time. Free. Chrome only. Needs internet.</span></div></label>
+        <label><input type="radio" name="txmode" value="browser" checked><div><b>Instant browser text (no API key)</b><span>Same method as the KABULIG FGD recorder. Keep it on Filipino: it also picks up many English words. Free. Chrome only. Needs internet.</span></div></label>
         <label><input type="radio" name="txmode" value="audio"><div><b>Record only</b><span>Transcribe everything after the conference.</span></div></label>
       </div>
       <div class="grid" id="browserOpts" style="margin-bottom:8px" hidden>
@@ -492,7 +492,7 @@ const getTx = () => (document.querySelector('input[name="txmode"]:checked')||{})
 function applyTxMode(){
   const m = getTx();
   $("browserOpts").hidden = m !== "browser"; $("spkGroup").hidden = m !== "browser";
-  $("modeNote").textContent = m === "auto" ? 'Auto mode saves the audio too. If Gemini stops (limit reached or no signal), the app switches to instant browser text by itself. Speaker labels are guessed clip by clip; "Improve with Gemini" in the review step relabels the whole conference at once.' : m === "browser" ? "Instant text hears one language at a time. If Taglish comes out wrong, keep audio saving on and use Improve with Gemini in the review step." : "Nothing is typed while recording. In the review step, press Improve with Gemini to transcribe the audio.";
+  $("modeNote").textContent = m === "auto" ? 'Auto mode saves the audio too. If Gemini stops (limit reached or no signal), the app switches to instant browser text by itself. Speaker labels are guessed clip by clip; "Improve with Gemini" in the review step relabels the whole conference at once.' : m === "browser" ? "Same engine as the FGD recorder. Keep it on Filipino: it also picks up many English words. If a long part comes out wrong, tap the language button, and keep audio saving on so Improve with Gemini can fix it later." : "Nothing is typed while recording. In the review step, press Improve with Gemini to transcribe the audio.";
   if(m !== "browser" && !cfg().key) $("modeNote").textContent += " This mode needs a Gemini key in Settings, because Claude cannot hear audio.";
 }
 document.querySelectorAll('input[name="txmode"]').forEach(r=>r.addEventListener("change",()=>{ applyTxMode(); saveDraft(); }));
