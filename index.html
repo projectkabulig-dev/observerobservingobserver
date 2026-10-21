@@ -441,7 +441,8 @@ RULES
 8. Do not list as a gap something the data marks as observed, unless you explain the difference.
 9. If RATING VISIBLE is no, do not give or mention any numeric or labeled rating of the observer (such as "partially aligned" or "2 of 4"). Describe what was seen and what would help.
 10. Where they support a point, state the computed statistics and the counts of question types plainly (for example the observer's share of words, or how many questions were closed). The report no longer prints separate statistics tables, so these numbers must appear in your sentences.
-11. Use Markdown with EXACTLY these sections, in this order, with these headings:
+11. Name the Glickman approach or approaches the observer mainly used (directive control, directive informational, collaborative, non-directive) and say plainly whether they matched this teacher's developmental level and why, with a short quote. Put this in the strengths or the gaps, whichever fits, and connect it to your choice of TA strategy. Do not turn it into a score.
+12. Use Markdown with EXACTLY these sections, in this order, with these headings:
 ## 1. Key Supervisory Strengths
 (3 to 5 bullets, each with a short quote as evidence)
 ## 2. Priority Supervisory Gaps
@@ -1103,6 +1104,22 @@ function renderReport(){
   h += row("Supervisor", $("supName").value + ", " + $("supPos").value);
   h += '</tbody></table></div>';
   h += '<p class="stat" style="margin-top:10px">Basis: the post-observation conference only. The pre-observation conference and the classroom observation were not observed. Evidence used: ' + modeText + ((snp.sr||"").trim() ? ", and the observer's own debrief (self-report)" : "") + '.' + (eq.level && eq.level !== "NE" ? ' Evidence quality: ' + esc(eq.level) + '.' : '') + '</p>';
+  {
+    const segs = a.segments || [], tot = segs.length, cnt = {};
+    Object.keys(APPR).forEach(k => cnt[k] = 0); segs.forEach(x => { cnt[x.approach] = (cnt[x.approach]||0) + 1; });
+    const real = Object.keys(APPR).filter(k => k !== "none" && cnt[k] > 0).sort((x,y) => cnt[y] - cnt[x]);
+    if(tot){
+      let line;
+      if(real.length){
+        const top = cnt[real[0]], tops = real.filter(k => cnt[k] === top);
+        line = 'Main approach: <b>' + tops.map(k => esc(APPR[k])).join(" and ") + '</b> (' + top + ' of ' + tot + ' segments' + (tops.length > 1 ? ' each' : '') + ').';
+        const others = real.filter(k => !tops.includes(k)).map(k => esc(APPR[k]) + " (" + cnt[k] + ")");
+        if(cnt.none) others.push("None or unclear (" + cnt.none + ")");
+        if(others.length) line += ' Also seen: ' + others.join(", ") + '.';
+      } else line = 'Main approach: not clear from the evidence.';
+      h += '<div class="note info" style="margin:10px 0"><b>Approach summary.</b> ' + line + ' This describes what was done. It is not a score.</div>';
+    }
+  }
   h += '<div class="guide"><b>Guide only.</b> Prepared with AI assistance from the evidence in the conference. It supports the supervisor\'s own judgment and is not a rating of the observer.</div>';
   h += mdToHtml(S.reportMd);
   h += '<div class="sig"><div>' + esc($("supName").value) + '<br>' + esc($("supPos").value) + '<br>Supervisor</div><div>Acknowledged by the observer<br>' + esc($("obsName").value||"") + '</div></div>';
