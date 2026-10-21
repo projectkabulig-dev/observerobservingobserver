@@ -316,6 +316,7 @@ dialog textarea{font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;min-height:
   <section class="panel" id="p4" hidden>
     <h2 class="title">Check the analysis</h2>
     <p class="lede">The AI classified each question and approach from the quotes shown. Change anything you disagree with, or remove items that are wrong. The final judgment is yours.</p>
+    <div class="note" id="staleWarn" hidden><b>The text changed after this analysis.</b> The results below were made from the older transcript or notes. Go to Review and press Analyze again to update them.</div>
     <div id="anWrap"><div class="card"><span class="stat">No analysis yet. Run "Analyze" in the Review step.</span></div></div>
     <div class="actions" id="genRow" hidden>
       <button class="btn primary" id="btnReport">Generate the report</button>
@@ -402,10 +403,13 @@ RULES
 7. Classify EVERY question asked by the observer. Types: open (invites explanation), closed (yes/no or single fact), probing (follow-up that digs into the teacher's answer), clarifying, reflective (invites the teacher to examine own practice), leading (suggests the expected answer), evaluative (a judgment disguised as a question), other.
 8. Divide the conference into consecutive segments where the observer's dominant approach is clear. Name the Glickman approach for each: directive_control, directive_informational, collaborative, non_directive, or none.
 9. Keep quotes under 40 words. Write all notes and rationale in English. Return VALID JSON only, no commentary, no markdown fences.
+10. The block "COMPUTED FROM TRANSCRIPT LABELS" is produced by software and is authoritative about whether speaker labels exist and about word counts. Do not say that labels are absent or that the talk ratio cannot be measured when that block reports labeled text. You may say that the correctness of the labels is unverified.
+11. Judge how readable the transcript is and report it in "evidence_quality". If many lines are garbled or unclear, set the level to "low", give low confidence to the affected segments, and set the fit rating to "NE" unless at least three segments have medium or high confidence.
 
 JSON SCHEMA
 {
  "sources_used": ["transcript","notes","self-report"],
+ "evidence_quality": {"level":"high|medium|low","reason":"one sentence"},
  "questions": [ {"time":"mm:ss or null","quote":"exact observer question","type":"open|closed|probing|clarifying|reflective|leading|evaluative|other","teacher_response":"short exact quote or null","source":"transcript|notes"} ],
  "segments": [ {"time_start":"mm:ss or null","phase":"opening|reflection|feedback|problem_solving|action_planning|closure|other","approach":"directive_control|directive_informational|collaborative|non_directive|none","quote":"exact quote showing the approach","confidence":"high|medium|low","rationale":"one sentence"} ],
  "elements": {
@@ -430,7 +434,11 @@ RULES
 2. The pre-observation conference and classroom observation were not observed. Do not comment on them except as referenced evidence.
 3. Be specific, fair and developmental. Name what the observer did well before gaps. Where evidence is thin, say so plainly instead of padding.
 4. Write in the requested report language. Keep quotes in their original language.
-5. Use Markdown with EXACTLY these sections, in this order, with these headings:
+5. Do not assume anyone's gender or title. Use the person's name, or "the observer" and "the teacher". Avoid Ms., Mr., she and he unless the data gives them.
+6. If evidence_quality is "low", say once at the start of the closing note that the findings are provisional, and why.
+7. Do not mention software internals. If the data and the computed statistics conflict, say so in one neutral sentence and tell the supervisor to check the transcript.
+8. Do not list as a gap something the data marks as observed, unless you explain the difference.
+9. Use Markdown with EXACTLY these sections, in this order, with these headings:
 ## 9. Key Supervisory Strengths
 (3 to 5 bullets, each with a short quote as evidence)
 ## 10. Priority Supervisory Gaps
@@ -505,6 +513,7 @@ function go(n){
     const k = +b.dataset.go; b.toggleAttribute("aria-current", k === n); if(k===n) b.setAttribute("aria-current","step"); else b.removeAttribute("aria-current");
     b.classList.toggle("done", k < n);
   });
+  if(n === 4) checkStale();
   if(n === 3){ $("transcript2").value = $("transcript").value; $("notes2").value = $("notes").value; updateTrStats(); updateAudioUI(); }
   if(n === 2){ $("transcript").value = $("transcript2").value || $("transcript").value; }
   window.scrollTo({top:0});
@@ -918,8 +927,10 @@ const SAMPLE = `[00:05] OBSERVER: Good morning, Ma'am. Salamat sa oras. Bago tay
 [01:55] OBSERVER: Sige, balikan natin yan sa susunod nating usapan. Salamat.`;
 $("btnSample").onclick = () => { if($("transcript2").value.trim() && !confirm("Replace the current transcript with a sample?")) return; $("transcript2").value = SAMPLE; $("transcript").value = SAMPLE; updateTrStats(); saveDraft(); };
 
-function contextBlock(){
-  const dur = S.elapsedBase ? fmt(S.elapsedBase) : "not recorded";
+function spanOf(tx){ const m = Array.from((tx||"").matchAll(/\[(\d{1,2}(?::\d{2}){1,2})\]/g)); return m.length ? m[m.length-1][1] : ""; }
+function contextBlock(tx){
+  tx = tx == null ? $("transcript2").value : tx;
+  const dur = S.elapsedBase ? fmt(S.elapsedBase) : (spanOf(tx) ? "not recorded in this session; the transcript runs to " + spanOf(tx) + " by its last timestamp" : "not recorded");
   return [
     "OBSERVER: " + ($("obsName").value||"(name not given)") + " · " + $("obsPos").value + " · supervision experience: " + $("obsExp").value,
     "TEACHER: " + ($("tName").value||"(name not given)") + " · " + $("tLevel").value + " · developmental level: " + $("tDev").value,
@@ -951,19 +962,20 @@ function parseJson(t){
 function normalize(a){
   a.questions = (a.questions||[]).filter(q=>q && q.quote).map(q=>Object.assign({type:"other"},q,{type: QTYPES.includes(q.type) ? q.type : "other"}));
   a.segments = (a.segments||[]).filter(s=>s && s.quote).map(s=>Object.assign({approach:"none",confidence:"low"},s,{approach: APPR[s.approach] ? s.approach : "none"}));
-  a.elements = a.elements || {}; a.fit = a.fit || {rating:"NE"}; a.model_drift = a.model_drift || {}; a.limitations = a.limitations || []; a.wait_time = a.wait_time || {status:"NE"};
+  a.elements = a.elements || {}; a.evidence_quality = a.evidence_quality || {level:"NE",reason:""}; a.fit = a.fit || {rating:"NE"}; a.model_drift = a.model_drift || {}; a.limitations = a.limitations || []; a.wait_time = a.wait_time || {status:"NE"};
   return a;
 }
 $("btnAnalyze").onclick = async () => {
   const mode = getMode(), st = $("anStatus"), btn = $("btnAnalyze");
   if(mode !== "notes" && !$("transcript2").value.trim()){ st.innerHTML = '<div class="err">The transcript is empty. Record, upload audio, or paste a transcript first.</div>'; return; }
   if(mode === "notes" && !$("notes2").value.trim()){ st.innerHTML = '<div class="err">Your notes are empty.</div>'; return; }
+  const snap = { tr: $("transcript2").value, nt: $("notes2").value, sr: $("selfReport").value, mode: getMode() };
   btn.disabled = true; st.innerHTML = '<span class="spinner"></span>Analyzing with ' + esc(modelLabel()) + '. This can take 30 to 90 seconds.';
   try{
     const sys = LS.get("ksup.promptA","") || DEFAULT_ANALYSIS;
     const out = await llm({ system:sys, text:evidencePackage(), json:true, maxTokens:16000 });
     let a; try{ a = parseJson(out.text); }catch(_){ throw new Error("The answer was cut off or was not valid JSON" + (out.finish === "MAX_TOKENS" ? " (too long)" : "") + ". Press Analyze again."); }
-    S.analysis = normalize(a); renderAnalysis(); st.textContent = ""; go(4);
+    S.analysis = normalize(a); S.snap = snap; renderAnalysis(); st.textContent = ""; go(4);
   }catch(e){ st.innerHTML = '<div class="err">'+esc(friendly(e))+'</div>'; if(e.noKey) openSettings(); }
   finally{ btn.disabled = false; }
 };
@@ -980,7 +992,8 @@ function qStats(a){
 function renderAnalysis(){
   const a = S.analysis; if(!a) return;
   const qs = qStats(a);
-  let h = '<div class="card"><h3>Questions asked by the observer ('+qs.total+')</h3>';
+  const eq = a.evidence_quality || {};
+  let h = (eq.level && eq.level !== "NE" ? '<div class="note'+(eq.level === "low" ? '' : ' info')+'"><b>Evidence quality: '+esc(eq.level)+'.</b> '+esc(eq.reason||"")+(eq.level === "low" ? ' Treat every rating below as provisional. Improving the transcript will improve the result.' : '')+'</div>' : '') + '<div class="card"><h3>Questions asked by the observer ('+qs.total+')</h3>';
   h += '<p class="stat" id="qSummary"></p>';
   h += '<div class="tscroll"><table><thead><tr><th>Time</th><th>Observer said</th><th>Teacher answered</th><th>Type</th><th></th></tr></thead><tbody>';
   a.questions.forEach((q,i)=>{ h += '<tr><td>'+esc(q.time||"")+'</td><td class="q">'+esc(q.quote)+'</td><td class="q">'+esc(q.teacher_response||"")+'</td><td>'+typeSel(i,q.type)+'</td><td><button class="btn small" data-del="questions" data-i="'+i+'" aria-label="Remove this question">Remove</button></td></tr>'; });
@@ -1026,8 +1039,11 @@ $("anWrap").addEventListener("click", e => {
 });
 
 /* ============ report ============ */
+function isStale(){ return !!(S.snap && S.analysis && ($("transcript2").value !== S.snap.tr || $("notes2").value !== S.snap.nt)); }
+function checkStale(){ $("staleWarn").hidden = !isStale(); }
 $("btnReport").onclick = async () => {
   const a = S.analysis; if(!a) return;
+  if(isStale() && !confirm("The transcript or notes changed after the analysis. The report will use the version that was analyzed. To use the new text, press Cancel, go to Review, and press Analyze again. Continue with the analyzed version?")) return;
   const st = $("rpStatus"), btn = $("btnReport"); btn.disabled = true;
   st.innerHTML = '<span class="spinner"></span>Writing the report with ' + esc(modelLabel()) + '.';
   try{
@@ -1040,8 +1056,9 @@ $("btnReport").onclick = async () => {
   finally{ btn.disabled = false; }
 };
 function evidencePackageForReport(){
-  const mode = getMode(), nt = $("notes2").value.trim(), sr = $("selfReport").value.trim(), tx = $("transcript2").value;
-  const parts = ["CONTEXT\n" + contextBlock()];
+  const sn = S.snap || { tr: $("transcript2").value, nt: $("notes2").value, sr: $("selfReport").value, mode: getMode() };
+  const mode = sn.mode, nt = (sn.nt||"").trim(), sr = (sn.sr||"").trim(), tx = sn.tr;
+  const parts = ["CONTEXT\n" + contextBlock(tx)];
   if(mode !== "notes") parts.push(statsBlock(tx));
   if(mode !== "transcript" && nt) parts.push("=== SUPERVISOR NOTES (source: notes) ===\n" + nt);
   if(sr) parts.push("=== OBSERVER SELF-REPORT (source: self-report, not observed) ===\n" + sr);
@@ -1069,7 +1086,7 @@ function mdToHtml(md){
   return out;
 }
 function renderReport(){
-  const a = S.analysis, mode = getMode(), tx = $("transcript2").value, ts = talkStats(tx), q = qStats(a);
+  const snp = S.snap || { tr: $("transcript2").value, mode: getMode() }, a = S.analysis, mode = snp.mode, tx = snp.tr, ts = talkStats(tx), q = qStats(a);
   const rating = a.fit.rating; const fitText = FIT_LABEL[rating] || FIT_LABEL.NE;
   let h = '<h2>Observer Supervision Report</h2><p class="sub">Post-observation conference analysis · Glickman developmental supervision</p>';
   h += '<div class="guide"><b>Guide only.</b> This report is prepared with AI assistance from the evidence shown. It does not replace the supervisor\'s own judgment, and it is not a performance rating of the observer.</div>';
@@ -1080,11 +1097,12 @@ function renderReport(){
   h += row("Observer", ($("obsName").value||"n/a") + " · " + $("obsPos").value + " · " + $("obsExp").value);
   h += row("Teacher", ($("tName").value||"n/a") + " · " + $("tLevel").value + " · " + $("tDev").value);
   h += row("Subject, school", ($("tSubj").value||"n/a") + " · " + ($("school").value||"n/a"));
-  h += row("Date of conference", $("confDate").value + (S.elapsedBase ? " · recorded length " + fmt(S.elapsedBase) : ""));
+  h += row("Date of conference", $("confDate").value + (S.elapsedBase ? " · recorded length " + fmt(S.elapsedBase) : (spanOf(tx) ? " · transcript runs to " + spanOf(tx) : "")));
   h += '</tbody></table></div>';
 
   h += '<h3>2. Evidence basis and limits</h3><ul>';
   h += '<li>Evidence used: ' + ({both:"transcript and supervisor notes", transcript:"transcript only", notes:"supervisor notes only"})[mode] + (($("selfReport").value.trim()) ? ", plus the observer\'s own debrief (self-report, not observed)" : "") + '.</li>';
+  { const eq = a.evidence_quality || {}; if(eq.level && eq.level !== "NE") h += '<li>Evidence quality: <b>' + esc(String(eq.level).toUpperCase()) + '</b>. ' + esc(eq.reason || "") + '</li>'; }
   h += '<li>Only the <b>post-observation conference</b> was observed. The pre-observation conference and the classroom observation are <span class="chip">NE</span> and are not rated.</li>';
   if(mode !== "notes") h += '<li>Transcript length: ' + ts.total + ' words; ' + Math.round(ts.labeledShare*100) + '% carries speaker labels.</li>';
   h += '<li>Wait time: ' + (ts.pauses.length ? ts.pauses.length + ' marked pause(s), longest ' + Math.max.apply(null, ts.pauses) + ' seconds (indicative only)' : '<span class="chip">NE</span> no pause markers in the evidence') + '.</li>';
