@@ -349,6 +349,7 @@ dialog textarea{font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;min-height:
           <option>English</option><option>Filipino</option><option>Taglish (English and Filipino mixed)</option>
         </select></label>
     </div>
+    <label style="font-size:14px;display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="setRating" style="margin-top:4px"><span>Show an alignment rating (1 to 4) in the report. Off by default, because the report is for technical assistance, not for grading the observer.</span></label>
     <label class="f">Claude API key
       <input id="setCKey" type="password" autocomplete="off" placeholder="sk-ant-...">
     </label>
@@ -438,16 +439,18 @@ RULES
 6. If evidence_quality is "low", say once at the start of the closing note that the findings are provisional, and why.
 7. Do not mention software internals. If the data and the computed statistics conflict, say so in one neutral sentence and tell the supervisor to check the transcript.
 8. Do not list as a gap something the data marks as observed, unless you explain the difference.
-9. Use Markdown with EXACTLY these sections, in this order, with these headings:
-## 9. Key Supervisory Strengths
+9. If RATING VISIBLE is no, do not give or mention any numeric or labeled rating of the observer (such as "partially aligned" or "2 of 4"). Describe what was seen and what would help.
+10. Where they support a point, state the computed statistics and the counts of question types plainly (for example the observer's share of words, or how many questions were closed). The report no longer prints separate statistics tables, so these numbers must appear in your sentences.
+11. Use Markdown with EXACTLY these sections, in this order, with these headings:
+## 1. Key Supervisory Strengths
 (3 to 5 bullets, each with a short quote as evidence)
-## 10. Priority Supervisory Gaps
+## 2. Priority Supervisory Gaps
 (2 to 4 bullets, each with a short quote as evidence and why it matters for the teacher's reflection)
-## 11. Coaching Guide for the Observer
+## 3. Coaching Guide for the Observer
 (Take 3 to 5 ACTUAL observer questions or statements from the data. Show a table with columns: Original | Better version | Why it works.)
-## 12. Technical Assistance Action Plan
+## 4. Technical Assistance Action Plan
 (A table with columns: Evidence | Gap | Target behavior | TA strategy | Timeline | Success indicator. Choose the TA strategy to suit the observer's experience in supervision: more directive for a new observer, collaborative for a developing observer, self-directed for an experienced one. Use relative timelines such as Week 1, Week 2 to 3, within the quarter. Make the success indicator measurable, for example the share of open questions in the next conference.)
-## 13. Supervisor's Closing Note
+## 5. Closing Note
 (One short paragraph on the overall picture, then one sentence on the main limitation of the evidence.)`;
 
 const TRANSCRIBE_PROMPT = `Transcribe this audio verbatim. It is a post-observation conference between an OBSERVER (a school head or master teacher who gives feedback and asks guiding questions) and a TEACHER (who talks about their lesson). The speakers use Filipino, English or Taglish. Keep the original language and code-switching exactly as spoken. Do not translate, summarize or correct grammar.
@@ -833,6 +836,7 @@ function friendly(e){
 
 /* ============ Claude (analysis and report) ============ */
 const provider = () => LS.get("ksup.provider","claude");
+const showRating = () => LS.get("ksup.rating","0") === "1";
 async function claude({system, text, maxTokens=16000}){
   const key = LS.get("ksup.ckey","");
   if(!key){ const e = new Error("No Claude API key yet. Open Settings and paste it."); e.noKey = true; e.provider = "claude"; throw e; }
@@ -993,7 +997,7 @@ function renderAnalysis(){
   const a = S.analysis; if(!a) return;
   const qs = qStats(a);
   const eq = a.evidence_quality || {};
-  let h = (eq.level && eq.level !== "NE" ? '<div class="note'+(eq.level === "low" ? '' : ' info')+'"><b>Evidence quality: '+esc(eq.level)+'.</b> '+esc(eq.reason||"")+(eq.level === "low" ? ' Treat every rating below as provisional. Improving the transcript will improve the result.' : '')+'</div>' : '') + '<div class="card"><h3>Questions asked by the observer ('+qs.total+')</h3>';
+  let h = (eq.level && eq.level !== "NE" ? '<div class="note'+(eq.level === "low" ? '' : ' info')+'"><b>Evidence quality: '+esc(eq.level)+'.</b> '+esc(eq.reason||"")+(eq.level === "low" ? ' Treat every finding below as provisional. Improving the transcript will improve the result.' : '')+'</div>' : '') + '<div class="card"><h3>Questions asked by the observer ('+qs.total+')</h3>';
   h += '<p class="stat" id="qSummary"></p>';
   h += '<div class="tscroll"><table><thead><tr><th>Time</th><th>Observer said</th><th>Teacher answered</th><th>Type</th><th></th></tr></thead><tbody>';
   a.questions.forEach((q,i)=>{ h += '<tr><td>'+esc(q.time||"")+'</td><td class="q">'+esc(q.quote)+'</td><td class="q">'+esc(q.teacher_response||"")+'</td><td>'+typeSel(i,q.type)+'</td><td><button class="btn small" data-del="questions" data-i="'+i+'" aria-label="Remove this question">Remove</button></td></tr>'; });
@@ -1010,7 +1014,7 @@ function renderAnalysis(){
   h += '</tbody></table></div></div>';
 
   const f = a.fit;
-  h += '<div class="card"><h3>Fit of approach to the teacher</h3><div class="grid"><label class="f">Alignment rating<select id="fitSel">' + ["1","2","3","4","NE"].map(v=>'<option value="'+v+'"'+(String(f.rating)===v?' selected':'')+'>'+(v==="NE"?"NE · not evident":v+" · "+FIT_LABEL[v])+'</option>').join("") + '</select></label>';
+  h += '<div class="card"><h3>Fit of approach to the teacher</h3><div class="grid">' + (showRating() ? '<label class="f">Alignment rating<select id="fitSel">' + ["1","2","3","4","NE"].map(v=>'<option value="'+v+'"'+(String(f.rating)===v?' selected':'')+'>'+(v==="NE"?"NE · not evident":v+" · "+FIT_LABEL[v])+'</option>').join("") + '</select></label>' : '');
   h += '<div class="stat">Dominant approach: <b>'+esc(f.dominant_approach||"n/a")+'</b><br>Better fit for this teacher: <b>'+esc(f.recommended_approach||"n/a")+'</b></div></div>';
   h += '<label class="f" style="margin-top:10px">Justification (you can edit)<textarea id="fitJust" rows="3">'+esc(f.justification||"")+'</textarea></label></div>';
 
@@ -1049,7 +1053,7 @@ $("btnReport").onclick = async () => {
   try{
     const tx = $("transcript2").value;
     const lang = $("repLang").value;
-    const parts = [{text: "REPORT LANGUAGE: " + lang + "\n\n" + evidencePackageForReport() + "\n\n=== CONFIRMED ANALYSIS DATA (supervisor-checked) ===\n" + JSON.stringify(a)}];
+    const parts = [{text: "REPORT LANGUAGE: " + lang + "\nRATING VISIBLE: " + (showRating() ? "yes" : "no") + "\n\n" + evidencePackageForReport() + "\n\n=== CONFIRMED ANALYSIS DATA (supervisor-checked) ===\n" + JSON.stringify(a)}];
     const out = await llm({ system: LS.get("ksup.promptR","") || DEFAULT_REPORT, text: parts[0].text, maxTokens:8000 });
     S.reportMd = out.text; renderReport(); st.textContent = ""; go(5);
   }catch(e){ st.innerHTML = '<div class="err">'+esc(friendly(e))+'</div>'; if(e.noKey) openSettings(); }
@@ -1086,63 +1090,20 @@ function mdToHtml(md){
   return out;
 }
 function renderReport(){
-  const snp = S.snap || { tr: $("transcript2").value, mode: getMode() }, a = S.analysis, mode = snp.mode, tx = snp.tr, ts = talkStats(tx), q = qStats(a);
-  const rating = a.fit.rating; const fitText = FIT_LABEL[rating] || FIT_LABEL.NE;
-  let h = '<h2>Observer Supervision Report</h2><p class="sub">Post-observation conference analysis · Glickman developmental supervision</p>';
-  h += '<div class="guide"><b>Guide only.</b> This report is prepared with AI assistance from the evidence shown. It does not replace the supervisor\'s own judgment, and it is not a performance rating of the observer.</div>';
-
-  h += '<h3>1. Administrative header</h3><div class="tscroll"><table><tbody>';
-  const row = (k,v)=>'<tr><th style="width:32%">'+esc(k)+'</th><td>'+esc(v)+'</td></tr>';
-  h += row("Supervisor", $("supName").value + ", " + $("supPos").value);
-  h += row("Observer", ($("obsName").value||"n/a") + " · " + $("obsPos").value + " · " + $("obsExp").value);
-  h += row("Teacher", ($("tName").value||"n/a") + " · " + $("tLevel").value + " · " + $("tDev").value);
+  const snp = S.snap || { tr: $("transcript2").value, mode: getMode(), sr: $("selfReport").value }, a = S.analysis, mode = snp.mode;
+  const eq = a.evidence_quality || {};
+  const modeText = ({both:"the transcript and the supervisor's notes", transcript:"the transcript", notes:"the supervisor's notes"})[mode];
+  const row = (k,v)=>'<tr><th style="width:28%">'+esc(k)+'</th><td>'+esc(v)+'</td></tr>';
+  let h = '<h2>Observer Supervision Report</h2><p class="sub">Post-observation conference · Technical assistance for the observer</p>';
+  h += '<div class="tscroll"><table><tbody>';
+  h += row("Observer", ($("obsName").value||"n/a") + " · " + $("obsPos").value);
+  h += row("Teacher", ($("tName").value||"n/a") + " · " + $("tLevel").value);
   h += row("Subject, school", ($("tSubj").value||"n/a") + " · " + ($("school").value||"n/a"));
-  h += row("Date of conference", $("confDate").value + (S.elapsedBase ? " · recorded length " + fmt(S.elapsedBase) : (spanOf(tx) ? " · transcript runs to " + spanOf(tx) : "")));
+  h += row("Date of conference", $("confDate").value + (S.elapsedBase ? " · recorded length " + fmt(S.elapsedBase) : (spanOf(snp.tr) ? " · transcript runs to " + spanOf(snp.tr) : "")));
+  h += row("Supervisor", $("supName").value + ", " + $("supPos").value);
   h += '</tbody></table></div>';
-
-  h += '<h3>2. Evidence basis and limits</h3><ul>';
-  h += '<li>Evidence used: ' + ({both:"transcript and supervisor notes", transcript:"transcript only", notes:"supervisor notes only"})[mode] + (($("selfReport").value.trim()) ? ", plus the observer\'s own debrief (self-report, not observed)" : "") + '.</li>';
-  { const eq = a.evidence_quality || {}; if(eq.level && eq.level !== "NE") h += '<li>Evidence quality: <b>' + esc(String(eq.level).toUpperCase()) + '</b>. ' + esc(eq.reason || "") + '</li>'; }
-  h += '<li>Only the <b>post-observation conference</b> was observed. The pre-observation conference and the classroom observation are <span class="chip">NE</span> and are not rated.</li>';
-  if(mode !== "notes") h += '<li>Transcript length: ' + ts.total + ' words; ' + Math.round(ts.labeledShare*100) + '% carries speaker labels.</li>';
-  h += '<li>Wait time: ' + (ts.pauses.length ? ts.pauses.length + ' marked pause(s), longest ' + Math.max.apply(null, ts.pauses) + ' seconds (indicative only)' : '<span class="chip">NE</span> no pause markers in the evidence') + '.</li>';
-  (a.limitations||[]).forEach(l=>{ h += '<li>' + esc(l) + '</li>'; });
-  h += '</ul>';
-
-  h += '<h3>3. Conference evidence summary</h3>';
-  if(mode === "notes" || ts.obsShare == null){ h += '<p>Talk ratio: <span class="chip">NE</span> (needs a transcript with speaker labels).</p>'; }
-  else {
-    const o = Math.round(ts.obsShare*100), t = 100 - o;
-    h += '<p>Talk ratio by words (labeled text only): observer <b>' + o + '%</b>, teacher <b>' + t + '%</b>.' + (ts.labeledShare < 0.6 ? ' <span class="chip warn">low label coverage, treat as rough</span>' : '') + '</p>';
-    h += '<div class="bar" aria-hidden="true"><span style="width:'+o+'%;background:#166a7f"></span><span style="width:'+t+'%;background:#c8892b"></span></div><div class="legend">Observer ' + o + '% · Teacher ' + t + '%</div>';
-  }
-  if(q.total){
-    const pct = n => Math.round(n/q.total*100) + "%";
-    h += '<p style="margin-top:12px">Observer questions found: <b>' + q.total + '</b>. Open, probing or reflective: <b>' + q.openish + ' (' + pct(q.openish) + ')</b>. Closed: <b>' + q.closed + ' (' + pct(q.closed) + ')</b>. Leading or evaluative: <b>' + q.leading + ' (' + pct(q.leading) + ')</b>.</p>';
-    h += '<div class="tscroll"><table><thead><tr>' + QTYPES.map(t=>'<th>'+t+'</th>').join("") + '</tr></thead><tbody><tr>' + QTYPES.map(t=>'<td>'+q.c[t]+'</td>').join("") + '</tr></tbody></table></div>';
-  } else h += '<p>Observer questions: <span class="chip">NE</span> none identified in the evidence.</p>';
-
-  h += '<h3>4. Questioning analysis</h3>';
-  if(q.total){ h += '<div class="tscroll"><table><thead><tr><th>Time</th><th>Observer said</th><th>Type</th><th>Teacher answered</th></tr></thead><tbody>' + a.questions.map(x=>'<tr><td>'+esc(x.time||"")+'</td><td class="q">'+esc(x.quote)+'</td><td>'+esc(x.type)+'</td><td class="q">'+esc(x.teacher_response||"")+'</td></tr>').join("") + '</tbody></table></div>'; }
-  else h += '<p><span class="chip">NE</span></p>';
-
-  h += '<h3>5. Glickman approach mapping</h3>';
-  if(a.segments.length){
-    const cnt = {}; Object.keys(APPR).forEach(k=>cnt[k]=0); a.segments.forEach(s=>cnt[s.approach]++);
-    const tot = a.segments.length;
-    h += '<div class="bar" aria-hidden="true">' + Object.keys(APPR).filter(k=>cnt[k]).map(k=>'<span style="width:'+(cnt[k]/tot*100)+'%;background:'+APPR_COLOR[k]+'"></span>').join("") + '</div>';
-    h += '<div class="legend">' + Object.keys(APPR).filter(k=>cnt[k]).map(k=>APPR[k]+": "+cnt[k]+" of "+tot+" segments").join(" · ") + '</div>';
-    h += '<div class="tscroll" style="margin-top:10px"><table><thead><tr><th>Time</th><th>Phase</th><th>Observer said</th><th>Approach</th><th>Confidence</th></tr></thead><tbody>' + a.segments.map(s=>'<tr><td>'+esc(s.time_start||"")+'</td><td>'+esc(String(s.phase||"").replace("_"," "))+'</td><td class="q">'+esc(s.quote)+'</td><td>'+esc(APPR[s.approach])+'</td><td>'+esc(s.confidence||"")+'</td></tr>').join("") + '</tbody></table></div>';
-  } else h += '<p><span class="chip">NE</span></p>';
-
-  h += '<h3>6. Fit of approach to the teacher</h3>';
-  h += '<p>Alignment rating: <b>' + esc(String(rating)) + (rating==="NE" ? "" : " of 4") + ' · ' + esc(fitText) + '</b>. Dominant approach: ' + esc(a.fit.dominant_approach||"n/a") + '. Better fit for this teacher: ' + esc(a.fit.recommended_approach||"n/a") + '.</p><p>' + esc(a.fit.justification||"") + '</p>';
-
-  h += '<h3>7. Post-conference fidelity</h3><div class="tscroll"><table><thead><tr><th>Element</th><th>Status</th><th>Evidence</th></tr></thead><tbody>' + Object.keys(ELEMENTS).map(k=>{ const e = a.elements[k]||{status:"NE"}; return '<tr><td>'+esc(ELEMENTS[k])+'</td><td>'+statusChip(e.status)+'</td><td class="q">'+esc(e.quote||"")+'<div class="stat">'+esc(e.note||"")+'</div></td></tr>'; }).join("") + '</tbody></table></div>';
-
-  const d = a.model_drift, tr = d.traditional_inspection||{}, pe = d.peer_collegial||{};
-  h += '<h3>8. Model drift check</h3><ul><li>Traditional inspection (compliance and rating only): ' + (tr.flag ? '<span class="chip bad">flagged</span> ' : '<span class="chip ok">not flagged</span> ') + '<span class="q">' + esc(tr.quote||"") + '</span> ' + esc(tr.note||"") + '</li><li>Peer or collegial drift (no accountability): ' + (pe.flag ? '<span class="chip bad">flagged</span> ' : '<span class="chip ok">not flagged</span> ') + '<span class="q">' + esc(pe.quote||"") + '</span> ' + esc(pe.note||"") + '</li></ul>';
-
+  h += '<p class="stat" style="margin-top:10px">Basis: the post-observation conference only. The pre-observation conference and the classroom observation were not observed. Evidence used: ' + modeText + ((snp.sr||"").trim() ? ", and the observer's own debrief (self-report)" : "") + '.' + (eq.level && eq.level !== "NE" ? ' Evidence quality: ' + esc(eq.level) + '.' : '') + '</p>';
+  h += '<div class="guide"><b>Guide only.</b> Prepared with AI assistance from the evidence in the conference. It supports the supervisor\'s own judgment and is not a rating of the observer.</div>';
   h += mdToHtml(S.reportMd);
   h += '<div class="sig"><div>' + esc($("supName").value) + '<br>' + esc($("supPos").value) + '<br>Supervisor</div><div>Acknowledged by the observer<br>' + esc($("obsName").value||"") + '</div></div>';
   $("reportBody").innerHTML = h;
@@ -1160,7 +1121,7 @@ $("btnDoc").onclick = () => {
 const dlg = $("dlgSettings");
 function openSettings(){
   $("setKey").value = cfg().key; $("setModel").value = cfg().model;
-  $("setProvider").value = provider(); $("setCKey").value = LS.get("ksup.ckey",""); $("setCModel").value = LS.get("ksup.cmodel","claude-sonnet-5-5");
+  $("setRating").checked = showRating(); $("setProvider").value = provider(); $("setCKey").value = LS.get("ksup.ckey",""); $("setCModel").value = LS.get("ksup.cmodel","claude-sonnet-5-5");
   $("setPA").value = LS.get("ksup.promptA","") || DEFAULT_ANALYSIS; $("setPR").value = LS.get("ksup.promptR","") || DEFAULT_REPORT;
   $("setStatus").textContent = ""; dlg.showModal();
 }
@@ -1169,7 +1130,7 @@ $("setCancel").onclick = () => dlg.close();
 $("showKey").onchange = e => { const t = e.target.checked ? "text" : "password"; $("setKey").type = t; $("setCKey").type = t; };
 $("setSave").onclick = () => {
   LS.set("ksup.key", $("setKey").value.trim()); LS.set("ksup.model", $("setModel").value.trim() || "gemini-3.8-flash");
-  LS.set("ksup.provider", $("setProvider").value); LS.set("ksup.ckey", $("setCKey").value.trim()); LS.set("ksup.cmodel", $("setCModel").value.trim() || "claude-sonnet-5-5");
+  LS.set("ksup.provider", $("setProvider").value); LS.set("ksup.rating", $("setRating").checked ? "1" : "0"); LS.set("ksup.ckey", $("setCKey").value.trim()); LS.set("ksup.cmodel", $("setCModel").value.trim() || "claude-sonnet-5-5");
   const pa = $("setPA").value.trim(), pr = $("setPR").value.trim();
   if(!pa || pa === DEFAULT_ANALYSIS.trim()) LS.del("ksup.promptA"); else LS.set("ksup.promptA", pa);
   if(!pr || pr === DEFAULT_REPORT.trim()) LS.del("ksup.promptR"); else LS.set("ksup.promptR", pr);
